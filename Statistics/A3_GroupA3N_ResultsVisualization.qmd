@@ -1,0 +1,655 @@
+---
+title: "Complex Networks - A3: Results Visualization"
+authors:
+- "David Hidalgo Fàbregas"
+- "Gemma Esteve Valls"
+- "Zaid al Hakioui el Mettioui"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+## Global Metrics
+```{r}
+df_global <- read.csv("../Results/Tables/global_network_metrics.csv")
+```
+
+### Comparison of Network Metrics
+```{r}
+order <- c(
+  "Number of Nodes",
+  "Number of Edges",
+  "Density",
+  "Clustering Coefficient",
+  "Average Degree",
+  "Median Degree",
+  "Largest Component",
+  "Diameter",
+  "Shortest Path Length"
+)
+
+df_viz <- df_global %>%
+  select(-small_world) %>%
+  pivot_longer(
+    cols = -c(subject, group),
+    names_to = "original_variable",
+    values_to = "value"
+  ) %>%
+  mutate(
+    Network_Type = ifelse(grepl("shuf_", original_variable), "Shuffled", "Real"),
+    Metric = gsub("shuf_", "", original_variable),
+    Metric = recode(Metric,
+      "num_nodes"              = "Number of Nodes",
+      "num_edges"              = "Number of Edges",
+      "avg_degree"             = "Average Degree",
+      "median_degree"          = "Median Degree",
+      "clustering"             = "Clustering Coefficient",
+      "diameter"               = "Diameter",
+      "density"                = "Density",
+      "largest_component_size" = "Largest Component",
+      "spl"                    = "Shortest Path Length"
+    ),
+    Metric = factor(Metric, levels = order),
+    group = factor(group, levels = c("NC", "AD"))
+  )
+```
+
+```{r}
+comparison <- ggplot(df_viz, aes(x = group, y = value, fill = Network_Type)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  
+  facet_wrap(~Metric, scales = "free_y", ncol = 3, strip.position = "left") +
+  
+  scale_fill_manual(values = c("Real" = "#E69F00", "Shuffled" = "#56B4E9")) +
+  
+  labs(title = "Comparison of Network Metrics",
+       x = NULL,
+       y = NULL,
+       fill = "Network Type") + 
+  
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    strip.placement = "outside",
+    strip.text = element_text(size = 13),
+    panel.spacing.y = unit(1, "cm"),
+    title = element_text(size=16),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13)
+  )
+
+print(comparison)
+```
+
+```{r}
+ggsave("../Results/Figures/global_metrics.png", 
+       plot = comparison, 
+       height = 8,
+       width = 10,
+       dpi = 300)
+```
+
+
+### Comparison of Small-World Property
+```{r}
+df_processed <- df_global %>%
+  mutate(
+    gamma = clustering / shuf_clustering,
+    lambda = spl / shuf_spl,
+    sigma = gamma /lambda,
+    group = factor(group, levels = c("NC", "AD"))
+  )
+```
+
+```{r}
+sw1 <- ggplot(
+  data = df_processed,
+  aes(
+    x = group,
+    y = gamma,
+    fill = group
+  )
+) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  scale_y_log10() +
+  
+  labs(
+    title = "Normalized Clustering",
+    y = expression(gamma),
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+
+sw2 <- ggplot(
+  data = df_processed,
+  aes(
+    x = group,
+    y = lambda,
+    fill = group
+  )
+) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  scale_y_log10() +
+  
+  labs(
+    title = "Normalized Path Length",
+    y = expression(lambda),
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+
+sw3 <- ggplot(
+  data = df_processed,
+  aes(
+    x = group,
+    y = small_world,
+    fill = group
+  )
+) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  scale_y_log10() +
+  
+  labs(
+    title = "Small-World index",
+    y = expression(sigma),
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+small_world <- sw1 + sw2 + sw3 +
+  plot_annotation(
+    title = 'Small-World Organization in AD and NC Networks',
+    theme = theme(plot.title = element_text(size = 16, face = "bold"))
+  )
+
+print(small_world)
+```
+```{r}
+ggsave("../Results/Figures/small_world_property.png", 
+       plot = small_world,
+       height = 4,
+       width = 12,
+       dpi = 300)
+```
+
+### Statistical Tests
+
+#### Real vs Shuffled Networks (Paired t-test)
+```{r}
+metrics_pair <- list(
+  "num_nodes" = "shuf_num_nodes",
+  "num_edges" = "shuf_num_edges",
+  "avg_degree" = "shuf_avg_degree",
+  "median_degree" = "shuf_median_degree",
+  "clustering" = "shuf_clustering",
+  "diameter" = "shuf_diameter",
+  "density" = "shuf_density",
+  "largest_component_size" = "shuf_largest_component_size",
+  "spl" = "shuf_spl"
+)
+
+# 3. Calculate pared group
+comparison_calc <- function(group_name) {
+  df_sub <- df_processed %>% filter(group == group_name)
+  
+  results <- map_df(names(metrics_pair), function(real_metric) {
+    shuf_metric <- metrics_pair[[real_metric]]
+    
+    # Extract Vectors
+    real_vals <- df_sub[[real_metric]]
+    shuf_vals <- df_sub[[shuf_metric]]
+    
+    # t-Test Paired (assume normality: sample >= 50)
+    test <- t.test(real_vals, shuf_vals, paired = TRUE)
+    
+    Mean_Real = mean(real_vals, na.rm = TRUE)
+    SD_Real = sd(real_vals, na.rm = TRUE)
+    Mean_Shuffled = mean(shuf_vals, na.rm = TRUE)
+    SD_Shuffled = sd(real_vals, na.rm = TRUE)
+    
+    tibble(
+      Group = group_name,
+      Metric = real_metric,
+      Real_Networks = sprintf("%.2f ± %.2f", Mean_Real, SD_Real),
+      Shuffled_Networks = sprintf("%.2f ± %.2f", Mean_Shuffled, SD_Shuffled),
+      p_value = test$p.value
+    )
+  })
+  return(results)
+}
+
+# 4. Execute both groups and bind
+comparison_table <- bind_rows(
+  comparison_calc("NC"),
+  comparison_calc("AD")
+) %>%
+  mutate(
+    significance = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    ),
+    p_value = sprintf("%.4e", p_value)
+  )
+
+ordered_table <- comparison_table %>%
+  select(Metric, Group, everything())
+
+write_csv(ordered_table, "../Results/Tables/Real_vs_Shuffled_Significance_Global_Metrics.csv")
+ordered_table
+```
+
+#### NC vs AD (Independent t-test)
+```{r}
+my_metrics <- c(
+  "num_nodes",
+  "num_edges",
+  "avg_degree",
+  "median_degree",
+  "clustering",
+  "diameter",
+  "density",
+  "largest_component_size",
+  "spl",
+  "gamma",
+  "lambda",
+  "small_world"
+)
+
+
+descriptive_table <- df_processed %>%
+  select(group, all_of(my_metrics)) %>%
+  pivot_longer(cols = -group, names_to = "Metric", values_to = "Value") %>%
+  group_by(Metric, group) %>%
+  summarise(
+    Average = mean(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  mutate(Format = sprintf("%.2f ± %.2f", Average, SD)) %>%
+  select(Metric, group, Format) %>%
+  pivot_wider(names_from = group, values_from = Format)
+
+
+t_test <- function(metrics_name) {
+  data_nc <- df_processed %>% filter(group == "NC") %>% pull(metrics_name)
+  data_ad <- df_processed %>% filter(group == "AD") %>% pull(metrics_name)
+  
+  test <- t.test(data_nc, data_ad)
+  
+  if(is.null(test)) return(NA)
+  return(test$p.value)
+}
+
+table_p <- tibble(Metric = my_metrics) %>%
+  mutate(p_value_num = map_dbl(Metric, t_test)) %>%
+  mutate(
+    p_value = sprintf("%.4f", p_value_num),
+    significance = case_when(
+      p_value_num < 0.001 ~ "***",
+      p_value_num < 0.01  ~ "**",
+      p_value_num < 0.05  ~ "*",
+      TRUE                ~ "ns"
+    )
+  )
+
+
+final_table <- left_join(descriptive_table, table_p %>% select(Metric, p_value, significance), by = "Metric")
+
+ordered_table <- final_table %>%
+  mutate(Metric = factor(Metric, levels = my_metrics)) %>%
+  arrange(Metric)
+
+write_csv(ordered_table, "../Results/Tables/NC_AD_Significance_Global_Metrics.csv")
+ordered_table
+```
+
+## Community metrics
+```{r}
+df_community <- read.csv("../Results/Tables/community_metrics.csv")
+head(df_community)
+```
+#### Real vs Shuffled Networks (Paired t-test)
+```{r}
+metrics_pair <- list(
+  "louvain_num" = "shuf_louvain_num",
+  "louvain_Q" = "shuf_louvain_Q",
+  "louvain_avg_size" = "shuf_louvain_avg_size",
+  "dcsbm_num" = "shuf_dcsbm_num",
+  "dcsbm_Q" = "shuf_dcsbm_Q",
+  "dcsbm_avg_size" = "shuf_dcsbm_avg_size",
+  "dcsbm_DL" = "shuf_dcsbm_DL",
+  "infomap_num" = "shuf_infomap_num",
+  "infomap_Q" = "shuf_infomap_Q",
+  "infomap_avg_size" = "shuf_infomap_avg_size",
+  "infomap_CL" = "shuf_infomap_CL"
+)
+
+# Calculate pared group
+comparison_calc <- map_df(names(metrics_pair), function(real_metric) {
+  shuf_metric <- metrics_pair[[real_metric]]
+  
+  # Extract Vectors
+  real_vals <- df_community[[real_metric]]
+  shuf_vals <- df_community[[shuf_metric]]
+  
+  # t-Test Paired (assume normality: sample >= 50)
+  test <- t.test(real_vals, shuf_vals, paired = TRUE)
+  
+  Mean_Real = mean(real_vals, na.rm = TRUE)
+  SD_Real = sd(real_vals, na.rm = TRUE)
+  Mean_Shuffled = mean(shuf_vals, na.rm = TRUE)
+  SD_Shuffled = sd(real_vals, na.rm = TRUE)
+  
+  tibble(
+    Metric = real_metric,
+    Real_Networks = sprintf("%.2f ± %.2f", Mean_Real, SD_Real),
+    Shuffled_Networks = sprintf("%.2f ± %.2f", Mean_Shuffled, SD_Shuffled),
+    p_value = test$p.value
+  )
+})
+
+# Execute both groups and bind
+comparison_table <- comparison_calc %>%
+  mutate(
+    significance = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    ),
+    p_value = sprintf("%.4e", p_value)
+  )
+
+write_csv(comparison_table, "../Results/Tables/Real_vs_Shuffled_Significance_Community_Metrics.csv")
+comparison_table
+```
+
+#### NC vs AD (Independent t-test)
+```{r}
+my_metrics <- c(
+  "louvain_num",
+  "louvain_Q",
+  "louvain_avg_size",
+  "dcsbm_num",
+  "dcsbm_Q",
+  "dcsbm_avg_size",
+  "dcsbm_DL",
+  "infomap_num",
+  "infomap_Q",
+  "infomap_avg_size",
+  "infomap_CL"
+)
+
+
+descriptive_table <- df_community %>%
+  select(group, all_of(my_metrics)) %>%
+  pivot_longer(cols = -group, names_to = "Metric", values_to = "Value") %>%
+  group_by(Metric, group) %>%
+  summarise(
+    Average = mean(Value, na.rm = TRUE),
+    SD = sd(Value, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  mutate(Format = sprintf("%.2f ± %.2f", Average, SD)) %>%
+  select(Metric, group, Format) %>%
+  pivot_wider(names_from = group, values_from = Format)
+
+
+t_test <- function(metrics_name) {
+  data_nc <- df_community %>% filter(group == "NC") %>% pull(metrics_name)
+  data_ad <- df_community %>% filter(group == "AD") %>% pull(metrics_name)
+  
+  tryCatch({
+    test <- t.test(data_nc, data_ad)
+    return(test$p.value)
+  }, error = function(e) {
+    return(NA) # Si los datos son constantes, devuelve NA
+  })
+}
+
+table_p <- tibble(Metric = my_metrics) %>%
+  mutate(p_value_num = map_dbl(Metric, t_test)) %>%
+  mutate(
+    p_value = sprintf("%.4f", p_value_num),
+    significance = case_when(
+      p_value_num < 0.001 ~ "***",
+      p_value_num < 0.01  ~ "**",
+      p_value_num < 0.05  ~ "*",
+      TRUE                ~ "ns"
+    )
+  )
+
+
+final_table <- left_join(descriptive_table, table_p %>% select(Metric, p_value, significance), by = "Metric")
+
+ordered_table <- final_table %>%
+  mutate(Metric = factor(Metric, levels = my_metrics)) %>%
+  arrange(Metric)
+
+write_csv(ordered_table, "../Results/Tables/NC_AD_Significance_Community_Metrics.csv")
+ordered_table
+```
+
+### Comparison of Community Metrics
+```{r}
+library(ggh4x)
+
+vars_needed <- c(
+  "subject", "group",
+  "louvain_num", "louvain_avg_size", "louvain_Q",
+  "dcsbm_num", "dcsbm_avg_size", "dcsbm_Q",
+  "infomap_num", "infomap_avg_size", "infomap_Q"
+)
+
+plot_data <- df_community %>%
+  select(any_of(vars_needed)) %>% 
+  pivot_longer(
+    cols = -c(subject, group), 
+    names_to = "raw_name", 
+    values_to = "value"
+  ) %>%
+  
+  # Divide var name
+  separate(raw_name, into = c("Algorithm", "Metric"), sep = "_", extra = "merge") %>%
+  
+  # Cleaning and ordering
+  mutate(
+    Algorithm = case_when(
+      Algorithm == "louvain" ~ "Louvain",
+      Algorithm == "dcsbm" ~ "DCSBM",
+      Algorithm == "infomap" ~ "Infomap"
+    ),
+    Algorithm = factor(Algorithm, levels = c("Louvain", "DCSBM", "Infomap")),
+    
+    Metric = case_when(
+      Metric == "num" ~ "Communities",
+      Metric == "avg_size" ~ "Average Size",
+      Metric == "Q" ~ "Modularity"
+    ),
+    Metric = factor(Metric, levels = c("Communities", "Average Size", "Modularity")),
+    
+    group = factor(group, levels = c("NC", "AD"))
+  )
+
+  
+# Generate graph
+community_metrics <- ggplot(plot_data, aes(x = group, y = value, fill = group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  
+  facet_grid2(Metric ~ Algorithm,
+              scales = "free_y",
+              independent ='y',
+              switch = "y") +
+  
+  facetted_pos_scales(
+    y = list(
+      Metric == "Communities" & Algorithm == "Infomap" ~ scale_y_continuous(limits = c(0, 18)),
+      Metric == "Communities" & Algorithm == "Louvain" ~ scale_y_continuous(limits = c(0, 18)),
+      Metric == "Average Size" & Algorithm == "Infomap" ~ scale_y_continuous(limits = c(0, 16)),
+      Metric == "Average Size" & Algorithm == "Louvain" ~ scale_y_continuous(limits = c(0, 16)),
+      Metric == "Modularity" & Algorithm == "Infomap" ~ scale_y_continuous(limits = c(0.2, 0.7)),
+      Metric == "Modularity" & Algorithm == "Louvain" ~ scale_y_continuous(limits = c(0.2, 0.7)),
+      Metric == "Communities" & Algorithm == "DCSBM" ~ scale_y_continuous(limits = c(0, 2)),
+      Metric == "Average Size" & Algorithm == "DCSBM" ~ scale_y_continuous(limits = c(0, 120)),
+      Metric == "Modularity" & Algorithm == "DCSBM" ~ scale_y_continuous(limits = c(0, 2e-17))
+      
+    )
+  ) +
+  
+  labs(title = "Network Metrics Comparison",
+       x = NULL,
+       y = NULL,
+       fill = "Group") + 
+  
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    panel.spacing = unit(1, "cm"),
+    strip.placement = "outside",
+    strip.text = element_text(size = 13),
+    strip.background = element_rect(fill = "gray95", color = NA),
+    title = element_text(size=16),
+    axis.text.x = element_blank(),
+    legend.text = element_text(size = 13)
+  )
+
+community_metrics
+```
+```{r}
+ggsave("../Results/Figures/community_metrics.png", 
+       plot = community_metrics,
+       height = 6,
+       width = 9,
+       dpi = 300)
+```
+
+### Algorithm Performance
+```{r}
+sw1 <- df_community %>%
+  mutate(group = factor(group, levels = c("NC", "AD"))) %>%
+  ggplot(
+    aes(
+      x = group,
+      y = louvain_Q,
+      fill = group
+    )
+  ) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  
+  labs(
+    title = "Louvain Modularity",
+    y = "Q",
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+
+sw2 <- df_community %>%
+  mutate(group = factor(group, levels = c("NC", "AD"))) %>%
+  ggplot(
+    aes(
+      x = group,
+      y = dcsbm_DL ,
+      fill = group
+    )
+  ) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  scale_y_log10() +
+  
+  labs(
+    title = "DCSBM Entropy",
+    y = "Description Length",
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+
+sw3 <- df_community %>%
+  mutate(group = factor(group, levels = c("NC", "AD"))) %>%
+  ggplot(
+    aes(
+      x = group,
+      y = infomap_CL,
+      fill = group
+    )
+) +
+  geom_violin(alpha = 0.3, trim = FALSE) +
+  geom_boxplot(width = 0.1) +
+  
+  labs(
+    title = "Infomap Dynamics",
+    y = "Code Length",
+    x = NULL,
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size=13),
+    axis.text.x = element_text(face = 'bold', size = 13),
+    legend.text = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    legend.position = "None"
+  )
+algorithm_performance <- sw1 + sw2 + sw3 +
+  plot_annotation(
+    title = 'Algorithms Performance',
+    theme = theme(plot.title = element_text(size = 16, face = "bold"))
+  )
+
+print(algorithm_performance)
+```
+
+```{r}
+ggsave("../Results/Figures/community_algorithm_performance.png", 
+       plot = algorithm_performance,
+       height = 4,
+       width = 12,
+       dpi = 300)
+```
